@@ -138,7 +138,7 @@ public class SocialApplication extends WebSecurityConfigurerAdapter {
 	
 	@Bean(name="wechat")
 	@ConfigurationProperties("wechat")
-	public ClientResources wechat() {
+	public ClientResources wechat() { 
 		return new ClientResources();
 	}
 
