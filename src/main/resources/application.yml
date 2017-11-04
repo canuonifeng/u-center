@@ -51,4 +51,4 @@ wechat:
 
 logging:
   level:
-    org: DEBUG
+    org.springframework.security: DEBUG
