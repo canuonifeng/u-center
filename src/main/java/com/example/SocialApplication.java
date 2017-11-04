@@ -19,7 +19,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.security.Principal;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -98,9 +98,9 @@ public class SocialApplication extends WebSecurityConfigurerAdapter {
 			user = userDao.save(user);
 		}
 		
-		Map<String, String> map = new HashMap<String, String>();
+		Map<String, String> map = new LinkedHashMap<String, String>();
 		map.put("name", user.getName());
-		map.put("id", user.getId().toString());
+		map.put("globalId", user.getId().toString());
 		return map;
 	}
 
