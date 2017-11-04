@@ -47,8 +47,8 @@ wechat:
     clientAuthenticationScheme: form
     scope: snsapi_userinfo
   resource:
-    userInfoUri: https://api.weixin.qq.com/sns/userinfo?openid=$openid$
+    userInfoUri: https://api.weixin.qq.com/sns/userinfo
 
 logging:
   level:
-    org.springframework.security: DEBUG
+    org: DEBUG

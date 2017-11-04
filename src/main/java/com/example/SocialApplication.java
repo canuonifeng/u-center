@@ -29,6 +29,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.autoconfigure.security.SecurityProperties;
+import org.springframework.boot.autoconfigure.security.oauth2.resource.AuthoritiesExtractor;
+import org.springframework.boot.autoconfigure.security.oauth2.resource.FixedAuthoritiesExtractor;
 import org.springframework.boot.autoconfigure.security.oauth2.resource.ResourceServerProperties;
 import org.springframework.boot.autoconfigure.security.oauth2.resource.UserInfoTokenServices;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -42,12 +44,16 @@ import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.oauth2.client.OAuth2ClientContext;
+import org.springframework.security.oauth2.client.OAuth2RestOperations;
 import org.springframework.security.oauth2.client.OAuth2RestTemplate;
 import org.springframework.security.oauth2.client.filter.OAuth2ClientAuthenticationProcessingFilter;
 import org.springframework.security.oauth2.client.filter.OAuth2ClientContextFilter;
+import org.springframework.security.oauth2.client.resource.BaseOAuth2ProtectedResourceDetails;
 import org.springframework.security.oauth2.client.resource.OAuth2AccessDeniedException;
 import org.springframework.security.oauth2.client.resource.OAuth2ProtectedResourceDetails;
 import org.springframework.security.oauth2.client.resource.UserApprovalRequiredException;
@@ -56,11 +62,15 @@ import org.springframework.security.oauth2.client.token.AccessTokenRequest;
 import org.springframework.security.oauth2.client.token.RequestEnhancer;
 import org.springframework.security.oauth2.client.token.grant.code.AuthorizationCodeAccessTokenProvider;
 import org.springframework.security.oauth2.client.token.grant.code.AuthorizationCodeResourceDetails;
+import org.springframework.security.oauth2.common.DefaultOAuth2AccessToken;
 import org.springframework.security.oauth2.common.OAuth2AccessToken;
+import org.springframework.security.oauth2.common.exceptions.InvalidTokenException;
 import org.springframework.security.oauth2.config.annotation.web.configuration.EnableAuthorizationServer;
 import org.springframework.security.oauth2.config.annotation.web.configuration.EnableOAuth2Client;
 import org.springframework.security.oauth2.config.annotation.web.configuration.EnableResourceServer;
 import org.springframework.security.oauth2.config.annotation.web.configuration.ResourceServerConfigurerAdapter;
+import org.springframework.security.oauth2.provider.OAuth2Authentication;
+import org.springframework.security.oauth2.provider.OAuth2Request;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
@@ -81,23 +91,25 @@ public class SocialApplication extends WebSecurityConfigurerAdapter {
 
 	@Autowired
 	private OAuth2ClientContext oauth2ClientContext;
-	
+
 	@Autowired
 	private Map<String, ClientResources> map;
-	
+
 	@Autowired
 	private UserDao userDao;
+	
+	static String openid;
 
 	@RequestMapping({ "/user", "/me" })
 	public Map<String, String> user(Principal principal) {
-		
+
 		User user = userDao.getByName(principal.getName());
-		if(null == user) {
+		if (null == user) {
 			user = new User();
 			user.setName(principal.getName());
 			user = userDao.save(user);
 		}
-		
+
 		Map<String, String> map = new LinkedHashMap<String, String>();
 		map.put("name", user.getName());
 		map.put("globalId", user.getId().toString());
@@ -108,8 +120,8 @@ public class SocialApplication extends WebSecurityConfigurerAdapter {
 	@Override
 	protected void configure(HttpSecurity http) throws Exception {
 		// @formatter:off
-		http.antMatcher("/**").authorizeRequests().antMatchers("/", "/login**", "/a.txt","/webjars/**").permitAll().anyRequest()
-				.authenticated().and().exceptionHandling()
+		http.antMatcher("/**").authorizeRequests().antMatchers("/", "/login**", "/a.txt", "/webjars/**").permitAll()
+				.anyRequest().authenticated().and().exceptionHandling()
 				.authenticationEntryPoint(new LoginUrlAuthenticationEntryPoint("/")).and().logout()
 				.logoutSuccessUrl("/").permitAll().and().csrf()
 				.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()).and()
@@ -140,60 +152,104 @@ public class SocialApplication extends WebSecurityConfigurerAdapter {
 		return registration;
 	}
 
-	@Bean(name="github")
+	@Bean(name = "github")
 	@ConfigurationProperties("github")
 	public ClientResources github() {
 		return new ClientResources();
 	}
 
-	@Bean(name="facebook")
+	@Bean(name = "facebook")
 	@ConfigurationProperties("facebook")
 	public ClientResources facebook() {
 		return new ClientResources();
 	}
-	
-	@Bean(name="wechat")
+
+	@Bean(name = "wechat")
 	@ConfigurationProperties("wechat")
-	public ClientResources wechat() { 
+	public ClientResources wechat() {
 		return new ClientResources();
 	}
 
 	private Filter ssoFilter() {
 		CompositeFilter filter = new CompositeFilter();
 		List<Filter> filters = new ArrayList<>();
-		
+
 		for (String key : map.keySet()) {
-			filters.add(ssoFilter(key, map.get(key), "/login/"+key));
+			filters.add(ssoFilter(key, map.get(key), "/login/" + key));
 		}
-		
+
 		filter.setFilters(filters);
 		return filter;
 	}
 
 	private Filter ssoFilter(String key, ClientResources client, String path) {
-		OAuth2ClientAuthenticationProcessingFilter filter = new OAuth2ClientAuthenticationProcessingFilter(
-				path);
-		
-		OAuth2RestTemplate template = null ;
+		OAuth2ClientAuthenticationProcessingFilter filter = new OAuth2ClientAuthenticationProcessingFilter(path);
+
+		OAuth2RestTemplate template = null;
 		if (key.equals("wechat")) {
 			template = new WeixinOAuth2RestTemplate(client.getClient(), oauth2ClientContext);
 		} else {
 			template = new OAuth2RestTemplate(client.getClient(), oauth2ClientContext);
 		}
-		
-		
+
 		filter.setRestTemplate(template);
-		
-		UserInfoTokenServices tokenServices = new UserInfoTokenServices(
-				client.getResource().getUserInfoUri(), client.getClient().getClientId());
+
+		UserInfoTokenServices tokenServices = new UserInfoTokenServices(client.getResource().getUserInfoUri(),
+				client.getClient().getClientId()) {
+			private AuthoritiesExtractor authoritiesExtractor = new FixedAuthoritiesExtractor();
+
+			@Override
+			public OAuth2Authentication loadAuthentication(String accessToken)
+					throws AuthenticationException, InvalidTokenException {
+
+				Map<String, Object> map = getMap(client.getResource().getUserInfoUri(), accessToken);
+
+				if (map.containsKey("error")) {
+					logger.debug("userinfo returned error: " + map.get("error"));
+					throw new InvalidTokenException(accessToken);
+				}
+				map.put("name", map.get("nickname"));
+				return extractAuthentication(map);
+			}
+
+			private OAuth2Authentication extractAuthentication(Map map) {
+				Object principal = getPrincipal(map);
+				List authorities = this.authoritiesExtractor.extractAuthorities(map);
+				OAuth2Request request = new OAuth2Request(null, client.getResource().getClientId(), null, true, null, null, null, null,
+						null);
+				UsernamePasswordAuthenticationToken token = new UsernamePasswordAuthenticationToken(principal, "N/A",
+						authorities);
+				token.setDetails(map);
+				return new OAuth2Authentication(request, token);
+			}
+
+			private Map<String, Object> getMap(String path, String accessToken) {
+				logger.info("Getting user info from: " + path);
+				OAuth2RestOperations restTemplate = new WeixinOAuth2RestTemplate(client.getClient(), oauth2ClientContext);;
+				if (restTemplate == null) {
+					BaseOAuth2ProtectedResourceDetails resource = new BaseOAuth2ProtectedResourceDetails();
+					resource.setClientId(client.getResource().getClientId());
+					restTemplate = new OAuth2RestTemplate(resource);
+				}
+				restTemplate.getOAuth2ClientContext().setAccessToken(new DefaultOAuth2AccessToken(accessToken));
+				path = path+"?access_token="+accessToken+"&openid="+SocialApplication.openid;
+
+				@SuppressWarnings("rawtypes")
+				Map map = restTemplate.getForEntity(path, Map.class).getBody();
+				@SuppressWarnings("unchecked")
+				Map<String, Object> result = map;
+				return result;
+			}
+
+		};
 		tokenServices.setRestTemplate(template);
 		filter.setTokenServices(tokenServices);
 		return filter;
 	}
-
 }
 
 class WeixinAuthorizationCodeAccessTokenProvider extends AuthorizationCodeAccessTokenProvider {
+
 	public WeixinAuthorizationCodeAccessTokenProvider(List<HttpMessageConverter<?>> messageConverters) {
 		this.setMessageConverters(messageConverters);
 		this.setTokenRequestEnhancer(new RequestEnhancer() {
@@ -211,11 +267,13 @@ class WeixinAuthorizationCodeAccessTokenProvider extends AuthorizationCodeAccess
 	}
 
 	@Override
-	public OAuth2AccessToken obtainAccessToken(OAuth2ProtectedResourceDetails details,
-			AccessTokenRequest request) throws UserRedirectRequiredException, UserApprovalRequiredException,
-			AccessDeniedException, OAuth2AccessDeniedException {
+	public OAuth2AccessToken obtainAccessToken(OAuth2ProtectedResourceDetails details, AccessTokenRequest request)
+			throws UserRedirectRequiredException, UserApprovalRequiredException, AccessDeniedException,
+			OAuth2AccessDeniedException {
 		try {
 			OAuth2AccessToken token = super.obtainAccessToken(details, request);
+			SocialApplication.openid = token.getAdditionalInformation().get("openid").toString();
+			String unionid = token.getAdditionalInformation().get("unionid").toString();
 			System.out.println(token.getValue());
 			return token;
 		} catch (UserRedirectRequiredException e) {
@@ -240,7 +298,6 @@ class WeixinOAuth2RestTemplate extends OAuth2RestTemplate {
 		});
 		this.setMessageConverters(messageConverters);
 		this.setAccessTokenProvider(new WeixinAuthorizationCodeAccessTokenProvider(messageConverters));
-
 	}
 
 	@Override
@@ -258,6 +315,7 @@ class WeixinOAuth2RestTemplate extends OAuth2RestTemplate {
 		}
 		return uri;
 	}
+
 }
 
 class ClientResources {
