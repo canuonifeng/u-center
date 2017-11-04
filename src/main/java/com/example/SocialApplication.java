@@ -19,7 +19,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.security.Principal;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -69,6 +69,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.filter.CompositeFilter;
 
+import com.example.dao.UserDao;
+import com.example.entity.User;
+
 @SpringBootApplication
 @RestController
 @EnableOAuth2Client
@@ -81,11 +84,23 @@ public class SocialApplication extends WebSecurityConfigurerAdapter {
 	
 	@Autowired
 	private Map<String, ClientResources> map;
+	
+	@Autowired
+	private UserDao userDao;
 
 	@RequestMapping({ "/user", "/me" })
 	public Map<String, String> user(Principal principal) {
-		Map<String, String> map = new LinkedHashMap<>();
-		map.put("name", principal.getName());
+		
+		User user = userDao.getByName(principal.getName());
+		if(null == user) {
+			user = new User();
+			user.setName(principal.getName());
+			user = userDao.save(user);
+		}
+		
+		Map<String, String> map = new HashMap<String, String>();
+		map.put("name", user.getName());
+		map.put("id", user.getId().toString());
 		return map;
 	}
 
