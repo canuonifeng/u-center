@@ -6,7 +6,7 @@ security:
     client:
       client-id: acme
       client-secret: acmesecret
-      access-token-uri: http://localhost:8080/oauth/token
-      user-authorization-uri: http://localhost:8080/oauth/authorize
+      access-token-uri: http://webdubilin-pay.st.edusoho.cn/oauth/token
+      user-authorization-uri: http://webdubilin-pay.st.edusoho.cn/oauth/authorize
     resource:
-      user-info-uri: http://localhost:8080/me
+      user-info-uri: http://webdubilin-pay.st.edusoho.cn/me

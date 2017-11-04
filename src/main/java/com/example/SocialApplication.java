@@ -199,7 +199,9 @@ class WeixinAuthorizationCodeAccessTokenProvider extends AuthorizationCodeAccess
 			AccessTokenRequest request) throws UserRedirectRequiredException, UserApprovalRequiredException,
 			AccessDeniedException, OAuth2AccessDeniedException {
 		try {
-			return super.obtainAccessToken(details, request);
+			OAuth2AccessToken token = super.obtainAccessToken(details, request);
+			System.out.println(token.getValue());
+			return token;
 		} catch (UserRedirectRequiredException e) {
 			Map<String, String> params = e.getRequestParams();
 			String clientId = params.get("client_id");
@@ -233,6 +235,7 @@ class WeixinOAuth2RestTemplate extends OAuth2RestTemplate {
 			String openid = (String) accessToken.getAdditionalInformation().get("openid");
 			try {
 				uri = new URI(url.replace("$openid$", openid));
+				System.out.println(uri);
 			} catch (URISyntaxException e) {
 				e.printStackTrace();
 			}
