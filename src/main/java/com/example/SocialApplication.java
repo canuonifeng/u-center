@@ -101,6 +101,7 @@ public class SocialApplication extends WebSecurityConfigurerAdapter {
 		Map<String, String> map = new LinkedHashMap<String, String>();
 		map.put("name", user.getName());
 		map.put("globalId", user.getId().toString());
+		map.put("avatar", "http://xx.jpg");
 		return map;
 	}
 
