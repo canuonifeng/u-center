@@ -17,9 +17,7 @@ package com.example;
 
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.security.Principal;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -75,12 +73,8 @@ import org.springframework.security.web.authentication.LoginUrlAuthenticationEnt
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.util.MultiValueMap;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.filter.CompositeFilter;
-
-import com.example.dao.UserDao;
-import com.example.entity.User;
 
 @SpringBootApplication
 @RestController
@@ -95,49 +89,16 @@ public class SocialApplication extends WebSecurityConfigurerAdapter {
 	@Autowired
 	private Map<String, ClientResources> map;
 
-	@Autowired
-	private UserDao userDao;
-	
 	static String openid;
-
-	@RequestMapping({ "/user", "/me" })
-	public Map<String, String> user(Principal principal) {
-
-		User user = userDao.getByName(principal.getName());
-		if (null == user) {
-			user = new User();
-			user.setName(principal.getName());
-			user = userDao.save(user);
-		}
-
-		Map<String, String> map = new LinkedHashMap<String, String>();
-		map.put("name", user.getName());
-		map.put("globalId", user.getId().toString());
-		map.put("avatar", "http://xx.jpg");
-		return map;
-	}
 
 	@Override
 	protected void configure(HttpSecurity http) throws Exception {
-		// @formatter:off
 		http.antMatcher("/**").authorizeRequests().antMatchers("/", "/login**", "/a.txt", "/webjars/**").permitAll()
 				.anyRequest().authenticated().and().exceptionHandling()
 				.authenticationEntryPoint(new LoginUrlAuthenticationEntryPoint("/")).and().logout()
 				.logoutSuccessUrl("/").permitAll().and().csrf()
 				.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()).and()
 				.addFilterBefore(ssoFilter(), BasicAuthenticationFilter.class);
-		// @formatter:on
-	}
-
-	@Configuration
-	@EnableResourceServer
-	protected static class ResourceServerConfiguration extends ResourceServerConfigurerAdapter {
-		@Override
-		public void configure(HttpSecurity http) throws Exception {
-			// @formatter:off
-			http.antMatcher("/me").authorizeRequests().anyRequest().authenticated();
-			// @formatter:on
-		}
 	}
 
 	public static void main(String[] args) {
@@ -192,59 +153,81 @@ public class SocialApplication extends WebSecurityConfigurerAdapter {
 			template = new OAuth2RestTemplate(client.getClient(), oauth2ClientContext);
 		}
 
+		UserInfoTokenServices tokenServices;
+		if (key.equals("wechat")) {
+			tokenServices = new WeixinnUserInfoTokenServices(oauth2ClientContext, client);
+		} else {
+			tokenServices = new UserInfoTokenServices(client.getResource().getUserInfoUri(),
+					client.getClient().getClientId());
+		}
+
 		filter.setRestTemplate(template);
-
-		UserInfoTokenServices tokenServices = new UserInfoTokenServices(client.getResource().getUserInfoUri(),
-				client.getClient().getClientId()) {
-			private AuthoritiesExtractor authoritiesExtractor = new FixedAuthoritiesExtractor();
-
-			@Override
-			public OAuth2Authentication loadAuthentication(String accessToken)
-					throws AuthenticationException, InvalidTokenException {
-
-				Map<String, Object> map = getMap(client.getResource().getUserInfoUri(), accessToken);
-
-				if (map.containsKey("error")) {
-					logger.debug("userinfo returned error: " + map.get("error"));
-					throw new InvalidTokenException(accessToken);
-				}
-				map.put("name", map.get("nickname"));
-				return extractAuthentication(map);
-			}
-
-			private OAuth2Authentication extractAuthentication(Map map) {
-				Object principal = getPrincipal(map);
-				List authorities = this.authoritiesExtractor.extractAuthorities(map);
-				OAuth2Request request = new OAuth2Request(null, client.getResource().getClientId(), null, true, null, null, null, null,
-						null);
-				UsernamePasswordAuthenticationToken token = new UsernamePasswordAuthenticationToken(principal, "N/A",
-						authorities);
-				token.setDetails(map);
-				return new OAuth2Authentication(request, token);
-			}
-
-			private Map<String, Object> getMap(String path, String accessToken) {
-				logger.info("Getting user info from: " + path);
-				OAuth2RestOperations restTemplate = new WeixinOAuth2RestTemplate(client.getClient(), oauth2ClientContext);;
-				if (restTemplate == null) {
-					BaseOAuth2ProtectedResourceDetails resource = new BaseOAuth2ProtectedResourceDetails();
-					resource.setClientId(client.getResource().getClientId());
-					restTemplate = new OAuth2RestTemplate(resource);
-				}
-				restTemplate.getOAuth2ClientContext().setAccessToken(new DefaultOAuth2AccessToken(accessToken));
-				path = path+"?access_token="+accessToken+"&openid="+SocialApplication.openid;
-
-				@SuppressWarnings("rawtypes")
-				Map map = restTemplate.getForEntity(path, Map.class).getBody();
-				@SuppressWarnings("unchecked")
-				Map<String, Object> result = map;
-				return result;
-			}
-
-		};
 		tokenServices.setRestTemplate(template);
 		filter.setTokenServices(tokenServices);
 		return filter;
+	}
+	
+	@Configuration
+	@EnableResourceServer
+	protected static class ResourceServerConfiguration extends ResourceServerConfigurerAdapter {
+		@Override
+		public void configure(HttpSecurity http) throws Exception {
+			// @formatter:off
+			http.antMatcher("/me").authorizeRequests().anyRequest().authenticated();
+			// @formatter:on
+		}
+	}
+}
+
+class WeixinnUserInfoTokenServices extends UserInfoTokenServices {
+
+	private ClientResources client;
+	private OAuth2ClientContext context;
+	private AuthoritiesExtractor authoritiesExtractor = new FixedAuthoritiesExtractor();
+
+	public WeixinnUserInfoTokenServices(OAuth2ClientContext context, ClientResources client) {
+		super(client.getResource().getUserInfoUri(), client.getClient().getClientId());
+		this.client = client;
+		this.context = context;
+	}
+
+	@Override
+	public OAuth2Authentication loadAuthentication(String accessToken)
+			throws AuthenticationException, InvalidTokenException {
+
+		Map<String, Object> map = getMap(client.getResource().getUserInfoUri(), accessToken);
+
+		if (map.containsKey("error")) {
+			logger.debug("userinfo returned error: " + map.get("error"));
+			throw new InvalidTokenException(accessToken);
+		}
+
+		map.put("name", map.get("nickname"));
+		return extractAuthentication(map);
+	}
+
+	private OAuth2Authentication extractAuthentication(Map map) {
+		Object principal = getPrincipal(map);
+		List authorities = this.authoritiesExtractor.extractAuthorities(map);
+		OAuth2Request request = new OAuth2Request(null, client.getClient().getClientId(), null, true, null, null, null,
+				null, null);
+		UsernamePasswordAuthenticationToken token = new UsernamePasswordAuthenticationToken(principal, "N/A",
+				authorities);
+		token.setDetails(map);
+
+		return new OAuth2Authentication(request, token);
+	}
+	
+	
+
+	private Map<String, Object> getMap(String path, String accessToken) {
+		OAuth2RestOperations restTemplate = new WeixinOAuth2RestTemplate(client.getClient(), context);
+		
+		restTemplate.getOAuth2ClientContext().setAccessToken(new DefaultOAuth2AccessToken(accessToken));
+
+		path = path + "?access_token=" + accessToken + "&openid=" + SocialApplication.openid;
+
+		return restTemplate.getForEntity(path, Map.class).getBody();
 	}
 }
 
@@ -284,6 +267,7 @@ class WeixinAuthorizationCodeAccessTokenProvider extends AuthorizationCodeAccess
 			throw e;
 		}
 	}
+
 }
 
 class WeixinOAuth2RestTemplate extends OAuth2RestTemplate {
