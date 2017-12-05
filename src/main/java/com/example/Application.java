@@ -1,22 +1,6 @@
-/*
- * Copyright 2012-2015 the original author or authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+
 package com.example;
 
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -51,7 +35,6 @@ import org.springframework.security.oauth2.client.OAuth2RestOperations;
 import org.springframework.security.oauth2.client.OAuth2RestTemplate;
 import org.springframework.security.oauth2.client.filter.OAuth2ClientAuthenticationProcessingFilter;
 import org.springframework.security.oauth2.client.filter.OAuth2ClientContextFilter;
-import org.springframework.security.oauth2.client.resource.BaseOAuth2ProtectedResourceDetails;
 import org.springframework.security.oauth2.client.resource.OAuth2AccessDeniedException;
 import org.springframework.security.oauth2.client.resource.OAuth2ProtectedResourceDetails;
 import org.springframework.security.oauth2.client.resource.UserApprovalRequiredException;
@@ -81,7 +64,7 @@ import org.springframework.web.filter.CompositeFilter;
 @EnableOAuth2Client
 @EnableAuthorizationServer
 @Order(SecurityProperties.ACCESS_OVERRIDE_ORDER)
-public class SocialApplication extends WebSecurityConfigurerAdapter {
+public class Application extends WebSecurityConfigurerAdapter {
 
 	@Autowired
 	private OAuth2ClientContext oauth2ClientContext;
@@ -89,7 +72,9 @@ public class SocialApplication extends WebSecurityConfigurerAdapter {
 	@Autowired
 	private Map<String, ClientResources> map;
 
-	static String openid;
+	public static void main(String[] args) {
+		SpringApplication.run(Application.class, args);
+	}
 
 	@Override
 	protected void configure(HttpSecurity http) throws Exception {
@@ -101,8 +86,13 @@ public class SocialApplication extends WebSecurityConfigurerAdapter {
 				.addFilterBefore(ssoFilter(), BasicAuthenticationFilter.class);
 	}
 
-	public static void main(String[] args) {
-		SpringApplication.run(SocialApplication.class, args);
+	@Configuration
+	@EnableResourceServer
+	protected static class ResourceServerConfiguration extends ResourceServerConfigurerAdapter {
+		@Override
+		public void configure(HttpSecurity http) throws Exception {
+			http.antMatcher("/me").authorizeRequests().anyRequest().authenticated();
+		}
 	}
 
 	@Bean
@@ -166,17 +156,7 @@ public class SocialApplication extends WebSecurityConfigurerAdapter {
 		filter.setTokenServices(tokenServices);
 		return filter;
 	}
-	
-	@Configuration
-	@EnableResourceServer
-	protected static class ResourceServerConfiguration extends ResourceServerConfigurerAdapter {
-		@Override
-		public void configure(HttpSecurity http) throws Exception {
-			// @formatter:off
-			http.antMatcher("/me").authorizeRequests().anyRequest().authenticated();
-			// @formatter:on
-		}
-	}
+
 }
 
 class WeixinnUserInfoTokenServices extends UserInfoTokenServices {
@@ -217,16 +197,12 @@ class WeixinnUserInfoTokenServices extends UserInfoTokenServices {
 
 		return new OAuth2Authentication(request, token);
 	}
-	
-	
 
 	private Map<String, Object> getMap(String path, String accessToken) {
 		OAuth2RestOperations restTemplate = new WeixinOAuth2RestTemplate(client.getClient(), context);
-		
+		path = path + "?access_token=" + context.getAccessToken().getValue() + "&openid="
+				+ context.getAccessToken().getAdditionalInformation().get("openid").toString();
 		restTemplate.getOAuth2ClientContext().setAccessToken(new DefaultOAuth2AccessToken(accessToken));
-
-		path = path + "?access_token=" + accessToken + "&openid=" + SocialApplication.openid;
-
 		return restTemplate.getForEntity(path, Map.class).getBody();
 	}
 }
@@ -254,11 +230,7 @@ class WeixinAuthorizationCodeAccessTokenProvider extends AuthorizationCodeAccess
 			throws UserRedirectRequiredException, UserApprovalRequiredException, AccessDeniedException,
 			OAuth2AccessDeniedException {
 		try {
-			OAuth2AccessToken token = super.obtainAccessToken(details, request);
-			SocialApplication.openid = token.getAdditionalInformation().get("openid").toString();
-			String unionid = token.getAdditionalInformation().get("unionid").toString();
-			System.out.println(token.getValue());
-			return token;
+			return super.obtainAccessToken(details, request);
 		} catch (UserRedirectRequiredException e) {
 			Map<String, String> params = e.getRequestParams();
 			String clientId = params.get("client_id");
@@ -283,23 +255,6 @@ class WeixinOAuth2RestTemplate extends OAuth2RestTemplate {
 		this.setMessageConverters(messageConverters);
 		this.setAccessTokenProvider(new WeixinAuthorizationCodeAccessTokenProvider(messageConverters));
 	}
-
-	@Override
-	protected URI appendQueryParameter(URI uri, OAuth2AccessToken accessToken) {
-		uri = super.appendQueryParameter(uri, accessToken);
-		String url = uri.toString();
-		if (url.contains("$openid$")) {
-			String openid = (String) accessToken.getAdditionalInformation().get("openid");
-			try {
-				uri = new URI(url.replace("$openid$", openid));
-				System.out.println(uri);
-			} catch (URISyntaxException e) {
-				e.printStackTrace();
-			}
-		}
-		return uri;
-	}
-
 }
 
 class ClientResources {

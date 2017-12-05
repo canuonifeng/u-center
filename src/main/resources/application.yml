@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:mysql://127.0.0.1:3306/cas
+    url: jdbc:mysql://127.0.0.1:3306/edusoho_uc
     username: root
     password: 
     driver-class-name: com.mysql.jdbc.Driver
@@ -51,4 +51,9 @@ wechat:
 
 logging:
   level:
-    org: DEBUG
+    org: ERROR
+
+# FLYWAY (FlywayProperties)
+flyway:
+  locations: migrations
+  validate-on-migrate: false
