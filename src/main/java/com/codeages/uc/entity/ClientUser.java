@@ -1,13 +1,19 @@
-package com.example.entity;
+package com.codeages.uc.entity;
 
 import javax.persistence.Entity;
+import javax.persistence.FetchType;
+import javax.persistence.JoinColumn;
+import javax.persistence.ManyToOne;
 import javax.persistence.Table;
 
 @Entity
 @Table(name = "client_user")
 public class ClientUser extends BaseEntity {
 
+	@ManyToOne(targetEntity = PlatformUser.class, fetch = FetchType.LAZY)
+	@JoinColumn(name = "platform_id")
 	private PlatformUser platformUser;
+	
 	private String clientKey;
 	private String clientUserId;
 	private String nickname;

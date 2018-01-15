@@ -1,4 +1,4 @@
-package com.example.entity;
+package com.codeages.uc.entity;
 
 import javax.persistence.Entity;
 import javax.persistence.Table;

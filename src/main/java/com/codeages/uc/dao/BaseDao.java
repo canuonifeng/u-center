@@ -1,4 +1,4 @@
-package com.example.dao;
+package com.codeages.uc.dao;
 
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.repository.NoRepositoryBean;

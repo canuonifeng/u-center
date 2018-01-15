@@ -1,4 +1,4 @@
-package com.example.entity;
+package com.codeages.uc.entity;
 
 import javax.persistence.Entity;
 import javax.persistence.Table;
@@ -6,11 +6,11 @@ import javax.persistence.Table;
 @Entity
 @Table(name = "platform_user")
 public class PlatformUser extends BaseEntity {
-
+	
 	private String nickname;
 	private String targetType;
-	private Long targetId;
-
+	private String targetId;
+	
 	public String getTargetType() {
 		return targetType;
 	}
@@ -19,11 +19,11 @@ public class PlatformUser extends BaseEntity {
 		this.targetType = targetType;
 	}
 
-	public Long getTargetId() {
+	public String getTargetId() {
 		return targetId;
 	}
 
-	public void setTargetId(Long targetId) {
+	public void setTargetId(String targetId) {
 		this.targetId = targetId;
 	}
 
